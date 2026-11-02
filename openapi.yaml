@@ -1,0 +1,199 @@
+openapi: 3.0.3
+info:
+  title: Tablo Frontend Backend Contract
+  version: 1.0.0
+  description: |
+    Backend contract for the current single-league dashboard. The frontend
+    currently uses a mock, not an HTTP backend. GET /leagues/{leagueId} adopts
+    the replacement URL suggested in frontend/src/lib/league/api.ts; response
+    schemas follow frontend/src/lib/league/types.ts.
+
+    The API base URL is supplied by VITE_API_URL when replacing the mock.
+    Paths below are relative to that base URL; no host or /api prefix is fixed
+    by the frontend.
+
+    This is the only backend operation used by the current frontend. There
+    are no request bodies, mutation operations, login endpoints, or protected
+    endpoints. Authentication is out of scope for the current application.
+
+    Standings, ranks, statistics, match outcomes, and newest-first match
+    ordering are computed locally in frontend/src/lib/league/standings.ts.
+    StandingRow is a client-derived type, not an API response.
+security: []
+paths:
+  /leagues/{leagueId}:
+    get:
+      operationId: fetchLeague
+      summary: Get the complete league used by the dashboard
+      description: |
+        Public endpoint; no authentication, query parameters, or request body.
+        Return the League object directly, without a data envelope or pagination.
+        The page calls fetchLeague() with its default ID, "default".
+        The mock currently ignores the ID and always returns its sample league;
+        this path describes the intended HTTP replacement.
+
+        Include every team and completed match needed to compute standings.
+        Empty teams and matches arrays are valid and trigger UI empty states.
+        Match array order does not matter because the frontend sorts it locally.
+      security: []
+      parameters:
+        - name: leagueId
+          in: path
+          required: true
+          description: League identifier. The current dashboard requests "default".
+          schema:
+            type: string
+          example: default
+      responses:
+        '200':
+          description: Complete league configuration, teams, and completed results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/League'
+              examples:
+                withResults:
+                  summary: League with a completed match
+                  value:
+                    id: default
+                    name: Brave-tablo Premier League
+                    sport: Football
+                    scoring:
+                      win: 3
+                      draw: 1
+                      loss: 0
+                    tieBreakers: [points, difference, for, name]
+                    teams:
+                      - id: ath
+                        name: Athletic Riverside
+                      - id: nor
+                        name: Northbridge Rovers
+                    matches:
+                      - id: m1
+                        date: '2026-09-06'
+                        homeTeamId: ath
+                        awayTeamId: nor
+                        homeScore: 2
+                        awayScore: 1
+                emptyLeague:
+                  summary: League with no teams or results yet
+                  value:
+                    id: default
+                    name: Brave-tablo Premier League
+                    sport: Football
+                    scoring:
+                      win: 3
+                      draw: 1
+                      loss: 0
+                    tieBreakers: [points, difference, for, name]
+                    teams: []
+                    matches: []
+        default:
+          description: |
+            Unsuccessful response. The mock and frontend do not define error
+            status codes or an error response body. The HTTP adapter should
+            reject unsuccessful responses so the existing page error boundary
+            can offer a retry. No structured error payload is consumed.
+components:
+  schemas:
+    League:
+      type: object
+      required: [id, name, sport, scoring, tieBreakers, teams, matches]
+      properties:
+        id:
+          type: string
+          example: default
+        name:
+          type: string
+          example: Brave-tablo Premier League
+        sport:
+          type: string
+          description: Display label, not a fixed sport enumeration.
+          example: Football
+        scoring:
+          $ref: '#/components/schemas/ScoringRules'
+        tieBreakers:
+          type: array
+          description: |
+            Ranking criteria in priority order. Numeric criteria sort descending;
+            name sorts alphabetically using localeCompare. The frontend appends
+            name as the final criterion if it is absent. An empty array is valid
+            and falls back to alphabetical team order.
+          items:
+            $ref: '#/components/schemas/TieBreaker'
+          example: [points, difference, for, name]
+        teams:
+          type: array
+          description: All league teams, with unique team IDs. May be empty.
+          items:
+            $ref: '#/components/schemas/Team'
+        matches:
+          type: array
+          description: |
+            All completed league matches, with unique match IDs. May be empty.
+            The frontend treats every entry as a final result and includes it in
+            standings; upcoming or unfinished fixtures have no representation.
+          items:
+            $ref: '#/components/schemas/Match'
+    Team:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          description: Identifier referenced by match homeTeamId and awayTeamId.
+          example: ath
+        name:
+          type: string
+          example: Athletic Riverside
+    Match:
+      type: object
+      description: |
+        Completed result. Both team IDs should reference teams in the enclosing
+        League. The frontend skips matches with missing teams when computing
+        standings and displays "Unknown team" in their result cards.
+      required: [id, date, homeTeamId, awayTeamId, homeScore, awayScore]
+      properties:
+        id:
+          type: string
+          description: Also used as the descending lexical tie-breaker for matches on the same date.
+          example: m1
+        date:
+          type: string
+          format: date
+          description: Calendar date in YYYY-MM-DD form, without a time or timezone.
+          example: '2026-09-06'
+        homeTeamId:
+          type: string
+          example: ath
+        awayTeamId:
+          type: string
+          example: nor
+        homeScore:
+          type: number
+          description: Final home score; follows the frontend's TypeScript number type.
+          example: 2
+        awayScore:
+          type: number
+          description: Final away score; follows the frontend's TypeScript number type.
+          example: 1
+    ScoringRules:
+      type: object
+      description: League points awarded per result; the frontend accepts numeric values.
+      required: [win, draw, loss]
+      properties:
+        win:
+          type: number
+          example: 3
+        draw:
+          type: number
+          example: 1
+        loss:
+          type: number
+          example: 0
+    TieBreaker:
+      type: string
+      description: |
+        points = total league points; difference = goals for minus goals against;
+        for = goals scored; name = team name.
+      enum: [points, difference, for, name]
